@@ -24,30 +24,42 @@ LIMIT = 120
 
 
 def get_candles(symbol):
+    end = int(time.time())
+    start = end - (14400 * 120)
+
     url = f"https://api.exchange.coinbase.com/products/{symbol}/candles"
+
     params = {
-        "granularity": 14400
+        "granularity": 14400,
+        "start": datetime.fromtimestamp(start, timezone.utc).isoformat(),
+        "end": datetime.fromtimestamp(end, timezone.utc).isoformat()
     }
 
     headers = {
         "User-Agent": "RadarCriptoIA"
     }
 
-    r = requests.get(url, params=params, headers=headers, timeout=30)
+    r = requests.get(
+        url,
+        params=params,
+        headers=headers,
+        timeout=30
+    )
+
     r.raise_for_status()
 
     data = r.json()
-
     data = sorted(data, key=lambda x: x[0])
 
     candles = []
+
     for c in data[-120:]:
         candles.append({
             "open": float(c[3]),
             "high": float(c[2]),
             "low": float(c[1]),
             "close": float(c[4]),
-            "volume": float(c[5]),
+            "volume": float(c[5])
         })
 
     return candles
