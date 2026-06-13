@@ -20,7 +20,7 @@ COINS = {
 }
 
 VS_CURRENCY = "usd"
-DAYS = 30
+DAYS = 14
 
 
 def get_market_data(coin_id):
