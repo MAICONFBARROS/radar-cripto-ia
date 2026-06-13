@@ -7,16 +7,16 @@ BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
 COINS = {
-    "BTCUSDT": "BTC",
-    "ETHUSDT": "ETH",
-    "BNBUSDT": "BNB",
-    "SOLUSDT": "SOL",
-    "XRPUSDT": "XRP",
-    "ADAUSDT": "ADA",
-    "DOGEUSDT": "DOGE",
-    "AVAXUSDT": "AVAX",
-    "LINKUSDT": "LINK",
-    "TRXUSDT": "TRX",
+    "BTC-USD": "BTC",
+    "ETH-USD": "ETH",
+    "SOL-USD": "SOL",
+    "XRP-USD": "XRP",
+    "ADA-USD": "ADA",
+    "DOGE-USD": "DOGE",
+    "AVAX-USD": "AVAX",
+    "LINK-USD": "LINK",
+    "LTC-USD": "LTC",
+    "DOT-USD": "DOT",
 }
 
 INTERVAL = "4h"
@@ -24,20 +24,32 @@ LIMIT = 120
 
 
 def get_candles(symbol):
-    url = "https://api.binance.com/api/v3/klines"
-    params = {"symbol": symbol, "interval": INTERVAL, "limit": LIMIT}
-    r = requests.get(url, params=params, timeout=30)
+    url = f"https://api.exchange.coinbase.com/products/{symbol}/candles"
+    params = {
+        "granularity": 14400
+    }
+
+    headers = {
+        "User-Agent": "RadarCriptoIA"
+    }
+
+    r = requests.get(url, params=params, headers=headers, timeout=30)
     r.raise_for_status()
 
+    data = r.json()
+
+    data = sorted(data, key=lambda x: x[0])
+
     candles = []
-    for c in r.json():
+    for c in data[-120:]:
         candles.append({
-            "open": float(c[1]),
+            "open": float(c[3]),
             "high": float(c[2]),
-            "low": float(c[3]),
+            "low": float(c[1]),
             "close": float(c[4]),
             "volume": float(c[5]),
         })
+
     return candles
 
 
