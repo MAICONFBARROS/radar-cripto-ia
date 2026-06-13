@@ -300,7 +300,7 @@ def main():
         try:
             resultado = analisar(coin_id, symbol)
             resultados.append(resultado)
-            time.sleep(2)
+            time.sleep(8)
         except Exception as erro:
             resultados.append({
                 "symbol": symbol,
