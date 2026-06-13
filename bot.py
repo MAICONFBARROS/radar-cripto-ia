@@ -191,14 +191,8 @@ def analisar(coin_id, symbol):
         sinal = "⚪ AGUARDAR"
 
     stop = suporte
-
-risco = price - stop
-
-if risco <= 0:
-    risco = price * 0.03
-
-alvo1 = price + (risco * 1.5)
-alvo2 = price + (risco * 2.5)
+    alvo1 = price + ((resistencia - suporte) * 0.5)
+    alvo2 = resistencia
 
     return {
         "symbol": symbol,
