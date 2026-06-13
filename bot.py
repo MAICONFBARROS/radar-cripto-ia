@@ -365,6 +365,9 @@ def enviar_telegram(msg):
 
 
 def main():
+    enviar_telegram("✅ Teste simples do Radar Cripto IA funcionando.")
+    retunn
+    
     resultados = []
 
     for symbol, name in COINS.items():
