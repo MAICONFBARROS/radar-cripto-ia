@@ -21,6 +21,7 @@ COINS = {
 
 VS_CURRENCY = "usd"
 DAYS = 30
+SLEEP_BETWEEN_COINS = 20
 
 
 def get_market_data(coin_id):
@@ -30,10 +31,7 @@ def get_market_data(coin_id):
         "days": DAYS,
         "interval": "hourly"
     }
-
-    headers = {
-        "User-Agent": "RadarCriptoIA"
-    }
+    headers = {"User-Agent": "RadarCriptoIA"}
 
     r = requests.get(url, params=params, headers=headers, timeout=30)
     r.raise_for_status()
@@ -42,7 +40,7 @@ def get_market_data(coin_id):
     prices = [float(x[1]) for x in data.get("prices", [])]
     volumes = [float(x[1]) for x in data.get("total_volumes", [])]
 
-    if len(prices) < 50:
+    if len(prices) < 80:
         raise Exception("Poucos dados retornados pela CoinGecko")
 
     return prices, volumes
@@ -96,6 +94,7 @@ def macd(values):
     for i in range(26, len(values)):
         e12 = ema(values[:i + 1], 12)
         e26 = ema(values[:i + 1], 26)
+
         if e12 is not None and e26 is not None:
             history.append(e12 - e26)
 
@@ -110,6 +109,94 @@ def suporte_resistencia(values):
     return suporte, resistencia
 
 
+def heikin_ashi_signal(values):
+    if len(values) < 10:
+        return "NEUTRO", 0
+
+    candles = []
+
+    for i in range(1, len(values)):
+        open_price = values[i - 1]
+        close_price = values[i]
+        high_price = max(open_price, close_price)
+        low_price = min(open_price, close_price)
+
+        candles.append({
+            "open": open_price,
+            "high": high_price,
+            "low": low_price,
+            "close": close_price
+        })
+
+    ha = []
+
+    for i, c in enumerate(candles):
+        ha_close = (c["open"] + c["high"] + c["low"] + c["close"]) / 4
+
+        if i == 0:
+            ha_open = (c["open"] + c["close"]) / 2
+        else:
+            ha_open = (ha[-1]["open"] + ha[-1]["close"]) / 2
+
+        ha.append({
+            "open": ha_open,
+            "close": ha_close
+        })
+
+    last = ha[-1]
+    prev = ha[-2]
+
+    if last["close"] > last["open"] and prev["close"] > prev["open"]:
+        return "ALTA", 10
+
+    if last["close"] < last["open"] and prev["close"] < prev["open"]:
+        return "BAIXA", -10
+
+    if last["close"] > last["open"] and prev["close"] < prev["open"]:
+        return "VIRANDO PARA ALTA", 8
+
+    if last["close"] < last["open"] and prev["close"] > prev["open"]:
+        return "VIRANDO PARA BAIXA", -8
+
+    return "NEUTRO", 0
+
+
+def definir_sinal(score):
+    if score >= 85:
+        return "🟢 ENTRADA VALIDADA"
+    if score >= 70:
+        return "🟢 COMPRA MODERADA"
+    if score >= 55:
+        return "⚪ AGUARDAR"
+    if score >= 40:
+        return "🟠 ENTRADA ARRISCADA"
+    return "🔴 SINAL BLOQUEADO"
+
+
+def calcular_alvos(price, suporte, resistencia, score):
+    if score >= 55:
+        stop = suporte
+        risco = price - stop
+
+        if risco <= 0:
+            risco = price * 0.03
+
+        alvo1 = price + (risco * 1.5)
+        alvo2 = price + (risco * 2.5)
+
+    else:
+        stop = resistencia
+        risco = stop - price
+
+        if risco <= 0:
+            risco = price * 0.03
+
+        alvo1 = price - (risco * 1.5)
+        alvo2 = price - (risco * 2.5)
+
+    return stop, alvo1, alvo2
+
+
 def analisar(coin_id, symbol):
     prices, volumes = get_market_data(coin_id)
 
@@ -122,6 +209,7 @@ def analisar(coin_id, symbol):
     rsi14 = rsi(prices, 14)
     macd_line, macd_signal = macd(prices)
     suporte, resistencia = suporte_resistencia(prices)
+    heikin_status, heikin_score = heikin_ashi_signal(prices)
 
     avg_volume = sum(volumes[-72:]) / 72 if len(volumes) >= 72 else sum(volumes) / len(volumes)
     volume_strength = volumes[-1] / avg_volume if avg_volume else 1
@@ -163,6 +251,9 @@ def analisar(coin_id, symbol):
             score -= 12
             motivos.append("MACD negativo")
 
+    score += heikin_score
+    motivos.append(f"Heikin Ashi {heikin_status}")
+
     if volume_strength > 1.25:
         score += 6
         motivos.append("Volume acima da média")
@@ -170,38 +261,28 @@ def analisar(coin_id, symbol):
         score -= 6
         motivos.append("Volume fraco")
 
-    if variation_24h > 3:
+    if variation_24h > 8:
+        score -= 10
+        motivos.append("Anti-FOMO: alta muito forte em 24h")
+    elif variation_24h > 3:
         score += 5
-        motivos.append("Alta forte nas últimas 24h")
+        motivos.append("Alta positiva nas últimas 24h")
     elif variation_24h < -3:
         score -= 5
         motivos.append("Queda forte nas últimas 24h")
 
     score = max(0, min(100, score))
 
-    if score >= 80:
-        sinal = "🟢 COMPRA FORTE"
-    elif score >= 65:
-        sinal = "🟢 COMPRA MODERADA"
-    elif score <= 25:
-        sinal = "🔴 VENDA FORTE"
-    elif score <= 40:
-        sinal = "🟠 VENDA / REDUZIR"
-    else:
-        sinal = "⚪ AGUARDAR"
-
-    stop = suporte
-    alvo1 = price + ((resistencia - suporte) * 0.5)
-    alvo2 = resistencia
+    stop, alvo1, alvo2 = calcular_alvos(price, suporte, resistencia, score)
 
     return {
         "symbol": symbol,
         "price": price,
         "score": score,
-        "sinal": sinal,
         "rsi": rsi14,
         "variation": variation_24h,
         "volume": volume_strength,
+        "heikin": heikin_status,
         "suporte": suporte,
         "resistencia": resistencia,
         "stop": stop,
@@ -211,13 +292,63 @@ def analisar(coin_id, symbol):
     }
 
 
+def aplicar_contexto_mercado(resultados):
+    validos = [r for r in resultados if "erro" not in r]
+
+    if not validos:
+        return resultados, 0, "SEM DADOS"
+
+    btc = next((r for r in validos if r["symbol"] == "BTC"), None)
+    btc_score = btc["score"] if btc else 50
+
+    media_mercado = sum(r["score"] for r in validos) / len(validos)
+    moedas_fracas = len([r for r in validos if r["score"] < 45])
+
+    modo_protecao = btc_score < 45 or moedas_fracas >= 6
+
+    if modo_protecao:
+        status_mercado = "🔴 MODO PROTEÇÃO"
+    elif media_mercado >= 70:
+        status_mercado = "🟢 MERCADO FAVORÁVEL"
+    elif media_mercado >= 55:
+        status_mercado = "🟡 MERCADO NEUTRO"
+    else:
+        status_mercado = "🟠 MERCADO FRACO"
+
+    for item in validos:
+        if item["symbol"] != "BTC":
+            if btc_score < 55 and item["score"] >= 70:
+                item["score"] -= 12
+                item["motivos"].append("Filtro BTC: BTC sem força para validar altcoin")
+
+            if modo_protecao:
+                item["score"] -= 10
+                item["motivos"].append("Modo proteção ativo")
+
+        item["score"] = max(0, min(100, item["score"]))
+        item["sinal"] = definir_sinal(item["score"])
+
+        stop, alvo1, alvo2 = calcular_alvos(
+            item["price"],
+            item["suporte"],
+            item["resistencia"],
+            item["score"]
+        )
+
+        item["stop"] = stop
+        item["alvo1"] = alvo1
+        item["alvo2"] = alvo2
+
+    return resultados, round(media_mercado, 1), status_mercado
+
+
 def money(value):
     if value < 10:
         return f"${value:,.4f}"
     return f"${value:,.2f}"
 
 
-def montar_relatorio(resultados):
+def montar_relatorio(resultados, market_index, status_mercado):
     now = datetime.now(timezone.utc).strftime("%d/%m/%Y %H:%M UTC")
 
     validos = [r for r in resultados if "erro" not in r]
@@ -227,8 +358,11 @@ def montar_relatorio(resultados):
     riscos = sorted(validos, key=lambda x: x["score"])[:3]
 
     linhas = []
-    linhas.append("📊 Radar Cripto IA 2.0")
+    linhas.append("📊 Radar Cripto IA 3.0")
     linhas.append(f"🕒 Atualização: {now}")
+    linhas.append("")
+    linhas.append(f"🌎 Mercado: {status_mercado}")
+    linhas.append(f"📈 Radar Market Index: {market_index}/100")
     linhas.append("")
     linhas.append("⚠️ Análise automatizada. Não é recomendação financeira.")
     linhas.append("")
@@ -252,6 +386,7 @@ def montar_relatorio(resultados):
         linhas.append(f"Score: {item['score']}/100")
         linhas.append(f"Preço: {money(item['price'])}")
         linhas.append(f"RSI: {item['rsi']:.2f}")
+        linhas.append(f"Heikin Ashi: {item['heikin']}")
         linhas.append(f"Variação 24h: {item['variation']:.2f}%")
         linhas.append(f"Volume: {item['volume']:.2f}x")
         linhas.append(f"Suporte: {money(item['suporte'])}")
@@ -259,7 +394,7 @@ def montar_relatorio(resultados):
         linhas.append(f"🛑 Stop: {money(item['stop'])}")
         linhas.append(f"🎯 Alvo 1: {money(item['alvo1'])}")
         linhas.append(f"🎯 Alvo 2: {money(item['alvo2'])}")
-        linhas.append(f"Motivos: {'; '.join(item['motivos'][:4])}")
+        linhas.append(f"Motivos: {'; '.join(item['motivos'][:5])}")
 
     if erros:
         linhas.append("")
@@ -300,14 +435,15 @@ def main():
         try:
             resultado = analisar(coin_id, symbol)
             resultados.append(resultado)
-            time.sleep(12)
+            time.sleep(SLEEP_BETWEEN_COINS)
         except Exception as erro:
             resultados.append({
                 "symbol": symbol,
                 "erro": str(erro)
             })
 
-    relatorio = montar_relatorio(resultados)
+    resultados, market_index, status_mercado = aplicar_contexto_mercado(resultados)
+    relatorio = montar_relatorio(resultados, market_index, status_mercado)
     enviar_telegram(relatorio)
 
 
