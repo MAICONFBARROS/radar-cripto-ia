@@ -403,7 +403,12 @@ def montar_relatorio(resultados, market_index, status_mercado):
             linhas.append(f"{item['symbol']}: {item['erro']}")
 
     linhas.append("")
-    linhas.append("✅ Use stop loss. Evite alavancagem sem experiência.")
+    linhas.append("━━━━━━━━━━━━━━━━━━")
+    linhas.append("🛡️ GESTÃO DE RISCO")
+    linhas.append("⚠️ Utilize preferencialmente alavancagem em modo ISOLADO.")
+    linhas.append("📊 Alavancagem máxima sugerida: 10x.")
+    linhas.append("💰 Risco recomendado por operação: até 2% do capital.")
+    linhas.append("🎯 Priorize operações com relação risco/retorno mínima de 1:2.")
 
     texto = "\n".join(linhas)
 
