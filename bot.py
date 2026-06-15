@@ -46,6 +46,66 @@ def get_market_data(coin_id):
     return prices, volumes
 
 
+
+def get_fear_greed():
+    """
+    Busca o Fear & Greed Index do mercado cripto.
+    Se a API falhar, o bot continua funcionando normalmente.
+    """
+    url = "https://api.alternative.me/fng/"
+    try:
+        r = requests.get(url, timeout=20)
+        r.raise_for_status()
+        data = r.json()
+
+        item = data.get("data", [{}])[0]
+        value = int(item.get("value", 50))
+        classification = item.get("value_classification", "Neutro")
+
+        return {
+            "value": value,
+            "classification": classification
+        }
+
+    except Exception as erro:
+        print(f"Erro ao buscar Fear & Greed: {erro}")
+        return {
+            "value": None,
+            "classification": "Indisponível"
+        }
+
+
+def traduzir_fear_greed(classification):
+    mapa = {
+        "Extreme Fear": "Medo Extremo",
+        "Fear": "Medo",
+        "Neutral": "Neutro",
+        "Greed": "Ganância",
+        "Extreme Greed": "Ganância Extrema",
+    }
+    return mapa.get(classification, classification)
+
+
+def sentimento_geral(fear_greed, status_mercado):
+    valor = fear_greed.get("value") if fear_greed else None
+
+    if valor is None:
+        if "QUEDA" in status_mercado or "PROTEÇÃO" in status_mercado:
+            return "🔴 BAIXISTA"
+        if "FAVORÁVEL" in status_mercado:
+            return "🟢 ALTISTA"
+        return "🟡 NEUTRO"
+
+    if valor <= 25:
+        return "🔴 MEDO EXTREMO / BAIXISTA"
+    if valor <= 45:
+        return "🟠 MEDO / CAUTELA"
+    if valor <= 60:
+        return "🟡 NEUTRO"
+    if valor <= 75:
+        return "🟢 OTIMISTA"
+    return "🟢🟢 GANÂNCIA EXTREMA / CUIDADO COM FOMO"
+
 def ema(values, period):
     if len(values) < period:
         return None
@@ -204,7 +264,7 @@ def calcular_alvos(price, suporte, resistencia, score):
     return stop, alvo1, alvo2
 
 
-def analisar(coin_id, symbol):
+def analisar(coin_id, symbol, fear_greed=None):
     prices, volumes = get_market_data(coin_id)
 
     price = prices[-1]
@@ -291,6 +351,31 @@ def analisar(coin_id, symbol):
     if variation_24h < -5 and volume_strength > 1.20:
         score -= 10
         motivos.append("Pressão vendedora forte")
+
+    if (
+        ema9 < ema21
+        and ema21 < ema50
+        and macd_line is not None
+        and macd_signal is not None
+        and macd_line < macd_signal
+        and rsi14 < 40
+    ):
+        score -= 20
+        motivos.append("Setup SHORT forte: EMA, MACD e RSI confirmados")
+
+    if rsi14 < 35 and macd_line is not None and macd_signal is not None and macd_line < macd_signal:
+        score -= 8
+        motivos.append("RSI fraco com MACD vendedor")
+
+    if fear_greed and fear_greed.get("value") is not None:
+        fg_value = fear_greed["value"]
+
+        if fg_value <= 25:
+            score -= 5
+            motivos.append("Fear & Greed em medo extremo")
+        elif fg_value >= 75:
+            score += 3
+            motivos.append("Fear & Greed em ganância elevada")
 
     score = max(0, min(100, score))
 
@@ -382,7 +467,7 @@ def number(value):
     return f"{value:.4f}"
 
 
-def montar_relatorio(resultados, market_index, status_mercado):
+def montar_relatorio(resultados, market_index, status_mercado, fear_greed):
     now = datetime.now(timezone.utc).strftime("%d/%m/%Y %H:%M UTC")
 
     validos = [r for r in resultados if "erro" not in r]
@@ -392,11 +477,21 @@ def montar_relatorio(resultados, market_index, status_mercado):
     riscos = sorted(validos, key=lambda x: x["score"])[:3]
 
     linhas = []
-    linhas.append("📊 Radar Cripto IA 3.1")
+    linhas.append("📊 Radar Cripto IA 3.2")
     linhas.append(f"🕒 Atualização: {now}")
     linhas.append("")
     linhas.append(f"🌎 Mercado: {status_mercado}")
     linhas.append(f"📈 Radar Market Index: {market_index}/100")
+
+    fg_value = fear_greed.get("value") if fear_greed else None
+    fg_class = traduzir_fear_greed(fear_greed.get("classification", "Indisponível")) if fear_greed else "Indisponível"
+
+    if fg_value is not None:
+        linhas.append(f"😱 Fear & Greed: {fg_value}/100 ({fg_class})")
+    else:
+        linhas.append("😱 Fear & Greed: Indisponível")
+
+    linhas.append(f"🧭 Sentimento Geral: {sentimento_geral(fear_greed, status_mercado)}")
     linhas.append("")
     linhas.append("⚠️ Análise automatizada. Não é recomendação financeira.")
     linhas.append("")
@@ -447,6 +542,42 @@ def montar_relatorio(resultados, market_index, status_mercado):
     return "\n".join(linhas)
 
 
+
+def montar_alertas_extremos(resultados):
+    validos = [r for r in resultados if "erro" not in r]
+
+    extremos = [
+        r for r in validos
+        if r["score"] >= 90 or r["score"] <= 25
+    ]
+
+    if not extremos:
+        return None
+
+    extremos = sorted(
+        extremos,
+        key=lambda x: x["score"],
+        reverse=True
+    )
+
+    linhas = []
+    linhas.append("🚨 ALERTAS EXTREMOS - Radar Cripto IA 3.2")
+
+    for item in extremos:
+        linhas.append("")
+        linhas.append(f"🪙 {item['symbol']} - {item['sinal']}")
+        linhas.append(f"Score: {item['score']}/100")
+        linhas.append(f"Preço: {money(item['price'])}")
+        linhas.append(f"RSI: {item['rsi']:.2f} | 24h: {item['variation']:.2f}% | Vol: {item['volume']:.2f}x")
+        linhas.append(f"Stop: {money(item['stop'])}")
+        linhas.append(f"Alvos: {money(item['alvo1'])} / {money(item['alvo2'])}")
+        linhas.append(f"Motivos: {'; '.join(item['motivos'][:4])}")
+
+    linhas.append("")
+    linhas.append("⚠️ Gestão de risco: máx. 10x isolado | risco até 2%.")
+
+    return "\n".join(linhas)
+
 def enviar_telegram(msg):
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
 
@@ -469,10 +600,11 @@ def enviar_telegram(msg):
 
 def main():
     resultados = []
+    fear_greed = get_fear_greed()
 
     for coin_id, symbol in COINS.items():
         try:
-            resultado = analisar(coin_id, symbol)
+            resultado = analisar(coin_id, symbol, fear_greed)
             resultados.append(resultado)
             time.sleep(SLEEP_BETWEEN_COINS)
         except Exception as erro:
@@ -482,8 +614,12 @@ def main():
             })
 
     resultados, market_index, status_mercado = aplicar_contexto_mercado(resultados)
-    relatorio = montar_relatorio(resultados, market_index, status_mercado)
+    relatorio = montar_relatorio(resultados, market_index, status_mercado, fear_greed)
     enviar_telegram(relatorio)
+
+    alertas = montar_alertas_extremos(resultados)
+    if alertas:
+        enviar_telegram(alertas)
 
 
 if __name__ == "__main__":
