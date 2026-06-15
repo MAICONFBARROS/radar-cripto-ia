@@ -162,14 +162,21 @@ def heikin_ashi_signal(values):
 
 
 def definir_sinal(score):
-    if score >= 85:
+    if score >= 90:
+        return "🟢🟢 LONG EXTREMO"
+
+    if score >= 80:
         return "🟢 LONG FORTE"
+
     if score >= 70:
-        return "🟢 COMPRA / LONG"
+        return "🟢 LONG MODERADO"
+
     if score >= 55:
         return "⚪ AGUARDAR"
+
     if score >= 40:
-        return "🔴 VENDA / SHORT"
+        return "🔴 SHORT MODERADO"
+
     return "🔴 SHORT FORTE"
 
 
