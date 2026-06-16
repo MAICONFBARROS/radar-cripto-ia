@@ -252,6 +252,29 @@ def definir_sinal(score):
     return "🔴 SHORT FORTE"
 
 
+def calibrar_piso_score(score, motivos):
+    """
+    Evita score 0 em correções fortes, mas mantém SHORT FORTE quando houver confluência real.
+    Score 0 fica reservado para cenário extremo.
+    """
+    motivos_texto = " | ".join(motivos)
+
+    setup_extremo = (
+        "Setup SHORT forte" in motivos_texto
+        or "Tendência de baixa confirmada" in motivos_texto
+        or "Pressão vendedora forte" in motivos_texto
+        or "Reversão agressiva" in motivos_texto
+    )
+
+    if score < 15 and not setup_extremo:
+        return 15
+
+    if score < 20 and setup_extremo:
+        return 20
+
+    return score
+
+
 def calcular_alvos(price, suporte, resistencia, score):
     if score >= 55:
         stop = suporte
@@ -444,6 +467,7 @@ def analisar(coin_id, symbol, fear_greed=None):
         motivos.append("Filtro anti-reversão reduziu sinal LONG")
 
     score = max(0, min(100, score))
+    score = calibrar_piso_score(score, motivos)
 
     stop, alvo1, alvo2 = calcular_alvos(price, suporte, resistencia, score)
 
@@ -497,14 +521,15 @@ def aplicar_contexto_mercado(resultados):
     for item in validos:
         if item["symbol"] != "BTC":
             if btc_score < 55 and item["score"] >= 70:
-                item["score"] -= 12
+                item["score"] -= 8
                 item["motivos"].append("Filtro BTC: BTC sem força para validar altcoin")
 
             if modo_protecao:
-                item["score"] -= 10
+                item["score"] -= 5
                 item["motivos"].append("Modo proteção ativo")
 
         item["score"] = max(0, min(100, item["score"]))
+        item["score"] = calibrar_piso_score(item["score"], item["motivos"])
         item["sinal"] = definir_sinal(item["score"])
 
         stop, alvo1, alvo2 = calcular_alvos(
@@ -545,7 +570,7 @@ def montar_relatorio(resultados, market_index, status_mercado, fear_greed):
     riscos = sorted(validos, key=lambda x: x["score"])[:3]
 
     linhas = []
-    linhas.append("📊 Radar Cripto IA 3.3")
+    linhas.append("📊 Radar Cripto IA 3.4")
     linhas.append(f"🕒 Atualização: {now}")
     linhas.append("")
     linhas.append(f"🌎 Mercado: {status_mercado}")
@@ -618,7 +643,7 @@ def montar_alertas_extremos(resultados):
 
     extremos = [
         r for r in validos
-        if r["score"] >= 90 or r["score"] <= 25
+        if r["score"] >= 92 or r["score"] <= 15
     ]
 
     if not extremos:
@@ -631,7 +656,7 @@ def montar_alertas_extremos(resultados):
     )
 
     linhas = []
-    linhas.append("🚨 ALERTAS EXTREMOS - Radar Cripto IA 3.3")
+    linhas.append("🚨 ALERTAS EXTREMOS - Radar Cripto IA 3.4")
 
     for item in extremos:
         linhas.append("")
@@ -687,9 +712,11 @@ def main():
     relatorio = montar_relatorio(resultados, market_index, status_mercado, fear_greed)
     enviar_telegram(relatorio)
 
-    alertas = montar_alertas_extremos(resultados)
-    if alertas:
-        enviar_telegram(alertas)
+    # Alertas extremos desativados para evitar envio duplicado no Telegram.
+    # O relatório principal já mostra TOP oportunidades e MAIORES RISCOS.
+    # alertas = montar_alertas_extremos(resultados)
+    # if alertas:
+    #     enviar_telegram(alertas)
 
 
 if __name__ == "__main__":
