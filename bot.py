@@ -394,43 +394,53 @@ def analisar(coin_id, symbol, fear_greed=None):
             score += 3
             motivos.append("Fear & Greed em ganância elevada")
 
-    # Filtro de reversão imediata:
-    # evita LONG forte quando o ativo começou a cair forte agora.
+    # Filtro de reversão imediata calibrado:
+    # reduz LONG forte quando o ativo começa a cair, mas sem derrubar o score para zero.
+    penalizacao_reversao = 0
+
     if momentum_1h <= -4:
-        score -= 25
+        penalizacao_reversao += 12
         motivos.append("Reversão agressiva na última hora")
     elif momentum_1h <= -2:
-        score -= 18
+        penalizacao_reversao += 8
         motivos.append("Queda forte na última hora")
     elif momentum_1h <= -1:
-        score -= 8
+        penalizacao_reversao += 4
         motivos.append("Pressão vendedora recente")
 
     if momentum_3h <= -5:
-        score -= 18
+        penalizacao_reversao += 10
         motivos.append("Queda forte nas últimas 3h")
     elif momentum_3h <= -3:
-        score -= 10
+        penalizacao_reversao += 6
         motivos.append("Momentum de 3h enfraquecendo")
+    elif momentum_3h <= -1.5:
+        penalizacao_reversao += 3
+        motivos.append("Momentum de 3h perdendo força")
 
     if ema9_anterior is not None and ema9 is not None and ema9 < ema9_anterior:
-        score -= 10
+        penalizacao_reversao += 4
         motivos.append("EMA 9 perdeu inclinação")
 
     if ema21_anterior is not None and ema21 is not None and ema21 < ema21_anterior:
-        score -= 6
+        penalizacao_reversao += 2
         motivos.append("EMA 21 perdendo força")
 
     if len(prices) >= 3 and prices[-1] < prices[-2] < prices[-3]:
-        score -= 12
+        penalizacao_reversao += 4
         motivos.append("Três períodos consecutivos de queda")
 
     if heikin_status == "ALTA" and ema9 is not None and price < ema9:
-        score -= 10
+        penalizacao_reversao += 5
         motivos.append("Preço contrariando Heikin Ashi")
 
+    # Limite máximo da penalização por reversão.
+    # Assim o bot evita LONG atrasado, mas não transforma correção curta em SHORT FORTE automaticamente.
+    penalizacao_reversao = min(18, penalizacao_reversao)
+    score -= penalizacao_reversao
+
     if score >= 70 and momentum_1h <= -1.5:
-        score -= 12
+        score -= 6
         motivos.append("Filtro anti-reversão reduziu sinal LONG")
 
     score = max(0, min(100, score))
@@ -535,7 +545,7 @@ def montar_relatorio(resultados, market_index, status_mercado, fear_greed):
     riscos = sorted(validos, key=lambda x: x["score"])[:3]
 
     linhas = []
-    linhas.append("📊 Radar Cripto IA 3.2")
+    linhas.append("📊 Radar Cripto IA 3.3")
     linhas.append(f"🕒 Atualização: {now}")
     linhas.append("")
     linhas.append(f"🌎 Mercado: {status_mercado}")
@@ -621,7 +631,7 @@ def montar_alertas_extremos(resultados):
     )
 
     linhas = []
-    linhas.append("🚨 ALERTAS EXTREMOS - Radar Cripto IA 3.2")
+    linhas.append("🚨 ALERTAS EXTREMOS - Radar Cripto IA 3.3")
 
     for item in extremos:
         linhas.append("")
