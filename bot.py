@@ -234,19 +234,19 @@ def heikin_ashi_signal(values):
 
 
 def definir_sinal(score):
-    if score >= 90:
+    if score >= 85:
         return "🟢🟢 LONG EXTREMO"
 
-    if score >= 80:
+    if score >= 75:
         return "🟢 LONG FORTE"
 
-    if score >= 70:
+    if score >= 60:
         return "🟢 LONG MODERADO"
 
-    if score >= 55:
+    if score >= 45:
         return "⚪ AGUARDAR"
 
-    if score >= 40:
+    if score >= 25:
         return "🔴 SHORT MODERADO"
 
     return "🔴 SHORT FORTE"
@@ -570,7 +570,7 @@ def montar_relatorio(resultados, market_index, status_mercado, fear_greed):
     riscos = sorted(validos, key=lambda x: x["score"])[:3]
 
     linhas = []
-    linhas.append("📊 Radar Cripto IA 3.4")
+    linhas.append("📊 Radar Cripto IA 3.5")
     linhas.append(f"🕒 Atualização: {now}")
     linhas.append("")
     linhas.append(f"🌎 Mercado: {status_mercado}")
@@ -656,7 +656,7 @@ def montar_alertas_extremos(resultados):
     )
 
     linhas = []
-    linhas.append("🚨 ALERTAS EXTREMOS - Radar Cripto IA 3.4")
+    linhas.append("🚨 ALERTAS EXTREMOS - Radar Cripto IA 3.5")
 
     for item in extremos:
         linhas.append("")
