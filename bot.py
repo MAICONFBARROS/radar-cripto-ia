@@ -169,6 +169,18 @@ def suporte_resistencia(values):
     return suporte, resistencia
 
 
+def variacao_periodos(values, periodos):
+    if len(values) <= periodos:
+        return 0
+
+    valor_anterior = values[-periodos - 1]
+
+    if valor_anterior == 0:
+        return 0
+
+    return ((values[-1] - valor_anterior) / valor_anterior) * 100
+
+
 def heikin_ashi_signal(values):
     if len(values) < 10:
         return "NEUTRO", 0
@@ -281,6 +293,11 @@ def analisar(coin_id, symbol, fear_greed=None):
     avg_volume = sum(volumes[-72:]) / 72 if len(volumes) >= 72 else sum(volumes) / len(volumes)
     volume_strength = volumes[-1] / avg_volume if avg_volume else 1
 
+    momentum_1h = variacao_periodos(prices, 1)
+    momentum_3h = variacao_periodos(prices, 3)
+    ema9_anterior = ema(prices[:-1], 9)
+    ema21_anterior = ema(prices[:-1], 21)
+
     score = 50
     motivos = []
 
@@ -377,6 +394,45 @@ def analisar(coin_id, symbol, fear_greed=None):
             score += 3
             motivos.append("Fear & Greed em ganância elevada")
 
+    # Filtro de reversão imediata:
+    # evita LONG forte quando o ativo começou a cair forte agora.
+    if momentum_1h <= -4:
+        score -= 25
+        motivos.append("Reversão agressiva na última hora")
+    elif momentum_1h <= -2:
+        score -= 18
+        motivos.append("Queda forte na última hora")
+    elif momentum_1h <= -1:
+        score -= 8
+        motivos.append("Pressão vendedora recente")
+
+    if momentum_3h <= -5:
+        score -= 18
+        motivos.append("Queda forte nas últimas 3h")
+    elif momentum_3h <= -3:
+        score -= 10
+        motivos.append("Momentum de 3h enfraquecendo")
+
+    if ema9_anterior is not None and ema9 is not None and ema9 < ema9_anterior:
+        score -= 10
+        motivos.append("EMA 9 perdeu inclinação")
+
+    if ema21_anterior is not None and ema21 is not None and ema21 < ema21_anterior:
+        score -= 6
+        motivos.append("EMA 21 perdendo força")
+
+    if len(prices) >= 3 and prices[-1] < prices[-2] < prices[-3]:
+        score -= 12
+        motivos.append("Três períodos consecutivos de queda")
+
+    if heikin_status == "ALTA" and ema9 is not None and price < ema9:
+        score -= 10
+        motivos.append("Preço contrariando Heikin Ashi")
+
+    if score >= 70 and momentum_1h <= -1.5:
+        score -= 12
+        motivos.append("Filtro anti-reversão reduziu sinal LONG")
+
     score = max(0, min(100, score))
 
     stop, alvo1, alvo2 = calcular_alvos(price, suporte, resistencia, score)
@@ -387,6 +443,8 @@ def analisar(coin_id, symbol, fear_greed=None):
         "score": score,
         "rsi": rsi14,
         "variation": variation_24h,
+        "momentum_1h": momentum_1h,
+        "momentum_3h": momentum_3h,
         "volume": volume_strength,
         "ema9": ema9,
         "ema21": ema21,
@@ -522,6 +580,8 @@ def montar_relatorio(resultados, market_index, status_mercado, fear_greed):
         linhas.append(f"EMA 50: {money(item['ema50'])}")
         linhas.append(f"Heikin Ashi: {item['heikin']}")
         linhas.append(f"Variação 24h: {item['variation']:.2f}%")
+        linhas.append(f"Momentum 1h: {item['momentum_1h']:.2f}%")
+        linhas.append(f"Momentum 3h: {item['momentum_3h']:.2f}%")
         linhas.append(f"Volume: {item['volume']:.2f}x")
         linhas.append(f"Suporte: {money(item['suporte'])}")
         linhas.append(f"Resistência: {money(item['resistencia'])}")
@@ -568,7 +628,7 @@ def montar_alertas_extremos(resultados):
         linhas.append(f"🪙 {item['symbol']} - {item['sinal']}")
         linhas.append(f"Score: {item['score']}/100")
         linhas.append(f"Preço: {money(item['price'])}")
-        linhas.append(f"RSI: {item['rsi']:.2f} | 24h: {item['variation']:.2f}% | Vol: {item['volume']:.2f}x")
+        linhas.append(f"RSI: {item['rsi']:.2f} | 1h: {item['momentum_1h']:.2f}% | 3h: {item['momentum_3h']:.2f}% | Vol: {item['volume']:.2f}x")
         linhas.append(f"Stop: {money(item['stop'])}")
         linhas.append(f"Alvos: {money(item['alvo1'])} / {money(item['alvo2'])}")
         linhas.append(f"Motivos: {'; '.join(item['motivos'][:4])}")
